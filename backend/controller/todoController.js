@@ -1,20 +1,43 @@
 // Get all todos
 const Todo = require('../models/Todo');
+const cache = require('memory-cache');
 
-exports.getAllTodos = async (req, res) => {
-    try {
-      const todos = await Todo.find().sort({ createdAt: -1 });
-      res.status(200).json({
-        status: 'success',
-        data: todos
-      });
-    } catch (error) {
-      res.status(500).json({
-        status: 'error',
-        message: error.message
-      });
-    }
-  };
+// Cache middleware
+const cacheMiddleware = (duration) => (req, res, next) => {
+  const key = '__express__' + req.originalUrl || req.url;
+  const cachedBody = cache.get(key);
+  
+  if (cachedBody) {
+    res.send(cachedBody);
+    return;
+  } else {
+    res.sendResponse = res.send;
+    res.send = (body) => {
+      cache.put(key, body, duration * 1000);
+      res.sendResponse(body);
+    };
+    next();
+  }
+};
+
+exports.getAllTodos = [cacheMiddleware(30), async (req, res) => {
+  try {
+    const todos = await Todo.find()
+      .select('title tasks createdAt') // Only select needed fields
+      .sort({ createdAt: -1 })
+      .lean(); // Use lean for better performance
+    
+    res.status(200).json({
+      status: 'success',
+      data: todos
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+}];
   
   // Create new todo
   exports.createTodo = async (req, res) => {
